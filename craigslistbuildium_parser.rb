@@ -25,7 +25,7 @@ def main
   cg_doc = Nokogiri.HTML(cg)
   # links to all US and CA sites with 'buildium' results
   sites = cg_doc.css('div.colmask')[0..1].map{|d|d.css('a').map{|a|a['href']}}.flatten.uniq
-  c_links = Parallel.map(sites[1..2], in_processes: 4) do |s|
+  c_links = Parallel.map(sites, in_processes: 4) do |s|
     ret = 5
     begin
       puts "links for site #{s} ..."
