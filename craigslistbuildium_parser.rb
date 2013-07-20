@@ -119,11 +119,17 @@ def buildium_subdomains(page_link)
   end
 end
 
-def listing_links(link)
-  site = Nokogiri.HTML(HTTParty.get(link, timeout: 10, headers: {'Accept-Encoding' => 'gzip'}))
+def listing_links(link, total = nil, start = 0)
+  site = Nokogiri.HTML(HTTParty.get("#{link}&s=#{start}", timeout: 10, headers: {'Accept-Encoding' => 'gzip'}))
+  puts "#{link}&s=#{start}"
   add_pages = site.css('span.pagelinks a').map{|a|a['href']}.uniq
+  total ||= site.css('.resulttotal').text.match(/[\d]+/)[0].to_i rescue 0
   site_pages = [site] + add_pages.map{|p|Nokogiri.HTML(HTTParty.get(p, timeout: 30))}
-  site_pages.map{|p|p.at_css('#toc_rows').css('p.row a').map{|a|a['href']}}.flatten.reject{|h|h=='#'}
+  pages = site_pages.map{|p|p.at_css('#toc_rows').css('p.row a').map{|a|a['href']}}.flatten.reject{|h|h=='#'}
+  if total > 100
+    pages = pages + listing_links(link, total-100, start+100)
+  end
+  pages
 end
 
 EMAIL_REGEX =  /^(|(([A-Za-z0-9]+_+)|([A-Za-z0-9]+\-+)|([A-Za-z0-9]+\.+)|([A-Za-z0-9]+\++))*[A-Za-z0-9]+@((\w+\-+)|(\w+\.))*\w{1,63}\.[a-zA-Z]{2,6})$/i
