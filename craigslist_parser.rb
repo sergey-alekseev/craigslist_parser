@@ -66,7 +66,7 @@ class CraigslistParser
       rescue => e
         puts e.backtrace
       end
-    end.flatten.reject { |e| e.blank? || e.match(ANONYMIZED_CRAIGLIST_EMAIL_REGEX) }.map(&:downcase).uniq.sort
+    end.flatten.reject(&:blank?).map(&:downcase).uniq.sort
     write_csv(emails, 'craigslist_emails')
   end
 
@@ -80,9 +80,11 @@ class CraigslistParser
 
   def self.emails_on_page(site_link)
     Parallel.map(all_links_from_site(site_link), threads: 20) do |link|
-      puts "emails for link #{link} ..."
-      g = HTTParty.get(link, no_follow: true) rescue nil
-      Nokogiri.HTML(g).inner_html.scan(SHORT_EMAIL_REGEX).flatten.uniq if g.present?
+      if (g = HTTParty.get(link, no_follow: true) rescue nil)
+        all_emails_on_page = Nokogiri.HTML(g).inner_html.scan(SHORT_EMAIL_REGEX).flatten.uniq if g.present?
+        puts all_emails_on_page = all_emails_on_page.reject { |e| e.match(ANONYMIZED_CRAIGLIST_EMAIL_REGEX) }
+        all_emails_on_page
+      end
     end.flatten.uniq
   end
 
