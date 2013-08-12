@@ -20,7 +20,7 @@ class CraigslistParser
   end
 
   def self.all_us_and_ca_sites_links
-    get_main_page_html.css('div.colmask')[0..1].map { |d| d.css('a').map { |a| a['href'] } }.flatten.uniq.take(1)
+    get_main_page_html.css('div.colmask')[0..1].map { |d| d.css('a').map { |a| a['href'] } }.flatten.uniq
   end
 
   def self.parse_contact_infos(provider, sanitize = true)
@@ -58,12 +58,32 @@ class CraigslistParser
     write_csv(infos, "craigslist_#{provider}_contact_infos")
   end
 
+  def self.parse_emails(provider)
+    emails = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |site_link|
+      begin
+        puts "emails for site #{site_link} ..."
+        emails_on_page(site_link, provider)
+      rescue => e
+        puts e.backtrace
+      end
+    end.flatten.reject(&:blank?).map(&:downcase).uniq.sort { |first, second| sort_emails(first, second) }
+    write_csv(emails, "craigslist_#{provider}_emails")
+  end
+
   def self.write_csv(infos, filename)
     puts infos.inspect
     csv_string = CSV.generate do |csv|
       infos.each { |info| csv << [info] }
     end
     File.open("#{filename}.csv",'w') { |f| f.write(csv_string) }
+  end
+
+  def self.emails_on_page(site_link, provider)
+    Parallel.map(all_links_from_site(site_link, provider), threads: 20) do |link|
+      puts "emails for link #{link} ..."
+      g = HTTParty.get(link, no_follow: true) rescue nil
+      Nokogiri.HTML(g).inner_html.scan(SHORT_EMAIL_REGEX).flatten.uniq if g.present?
+    end.flatten.uniq
   end
 
   def self.all_links_from_site(link, provider)
@@ -108,6 +128,16 @@ class CraigslistParser
     pages
   end
 
+  def self.sort_emails(first, second)
+    if first.match(STANDARD_CRAIGLIST_EMAIL_REGEX) && !second.match(STANDARD_CRAIGLIST_EMAIL_REGEX)
+      1
+    elsif !first.match(STANDARD_CRAIGLIST_EMAIL_REGEX) && second.match(STANDARD_CRAIGLIST_EMAIL_REGEX)
+      -1
+    else
+      first <=> second
+    end
+  end
+
   protected
     def self.contact_info(provider, link)
       raise "Not implemented"
@@ -118,3 +148,5 @@ class CraigslistParser
     end
 end
 
+CraigslistParser.parse_emails('buildium')
+# CraigslistParser.parse_emails('appfolio')
