@@ -6,7 +6,7 @@ require 'httparty'
 require 'csv'
 
 class CraigslistParser
-  STANDARD_CRAIGLIST_EMAIL_REGEX = /([-a-z0-9.]+@hous\.craigslist\.org)/i
+  ANONYMIZED_CRAIGLIST_EMAIL_REGEX = /([-a-z0-9.]+@hous\.craigslist\.org)/i
   SHORT_EMAIL_REGEX = /([-a-z0-9.]+@[-a-z0-9.]+[a-z]{2,})/i
   EMAIL_REGEX =  /^(|(([A-Za-z0-9]+_+)|([A-Za-z0-9]+\-+)|([A-Za-z0-9]+\.+)|([A-Za-z0-9]+\++))*[A-Za-z0-9]+@((\w+\-+)|(\w+\.))*\w{1,63}\.[a-zA-Z]{2,6})$/i
   PHONE_REGEX = /^((\([\d]+\).*)|(.*\([\d.]{5,}\))|([\d.\- \(\)\/]+\((fax|office)\))?|([\d.\- \(\)\/]{10,}.*)|([\d\-]{8,}.*)|(Joey Gonzalez Cell \(fax\)))$/
@@ -66,8 +66,8 @@ class CraigslistParser
       rescue => e
         puts e.backtrace
       end
-    end.flatten.reject(&:blank?).map(&:downcase).uniq.sort { |first, second| sort_emails(first, second) }
     write_csv(emails, "craigslist_#{provider}_emails")
+    end.flatten.reject { |e| e.blank? || e.match(ANONYMIZED_CRAIGLIST_EMAIL_REGEX) }.map(&:downcase).uniq.sort
   end
 
   def self.write_csv(infos, filename)
@@ -126,16 +126,6 @@ class CraigslistParser
       pages = pages + listing_links(link, total-100, start+100)
     end
     pages
-  end
-
-  def self.sort_emails(first, second)
-    if first.match(STANDARD_CRAIGLIST_EMAIL_REGEX) && !second.match(STANDARD_CRAIGLIST_EMAIL_REGEX)
-      1
-    elsif !first.match(STANDARD_CRAIGLIST_EMAIL_REGEX) && second.match(STANDARD_CRAIGLIST_EMAIL_REGEX)
-      -1
-    else
-      first <=> second
-    end
   end
 
   protected
