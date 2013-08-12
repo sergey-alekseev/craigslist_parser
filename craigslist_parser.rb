@@ -58,16 +58,16 @@ class CraigslistParser
     write_csv(infos, "craigslist_#{provider}_contact_infos")
   end
 
-  def self.parse_emails(provider)
+  def self.parse_emails
     emails = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |site_link|
       begin
         puts "emails for site #{site_link} ..."
-        emails_on_page(site_link, provider)
+        emails_on_page(site_link)
       rescue => e
         puts e.backtrace
       end
-    write_csv(emails, "craigslist_#{provider}_emails")
     end.flatten.reject { |e| e.blank? || e.match(ANONYMIZED_CRAIGLIST_EMAIL_REGEX) }.map(&:downcase).uniq.sort
+    write_csv(emails, 'craigslist_emails')
   end
 
   def self.write_csv(infos, filename)
@@ -78,16 +78,16 @@ class CraigslistParser
     File.open("#{filename}.csv",'w') { |f| f.write(csv_string) }
   end
 
-  def self.emails_on_page(site_link, provider)
-    Parallel.map(all_links_from_site(site_link, provider), threads: 20) do |link|
+  def self.emails_on_page(site_link)
+    Parallel.map(all_links_from_site(site_link), threads: 20) do |link|
       puts "emails for link #{link} ..."
       g = HTTParty.get(link, no_follow: true) rescue nil
       Nokogiri.HTML(g).inner_html.scan(SHORT_EMAIL_REGEX).flatten.uniq if g.present?
     end.flatten.uniq
   end
 
-  def self.all_links_from_site(link, provider)
-    listing_links(link + "/search/apa?query=#{provider}").map { |l| l.start_with?('http') ? l : (link + l) }
+  def self.all_links_from_site(link)
+    listing_links("#{link}/search/apa?").map { |l| l.start_with?('http') ? l : (link + l) }
   end
 
   def self.sanitize_info(nfo)
@@ -138,5 +138,4 @@ class CraigslistParser
     end
 end
 
-CraigslistParser.parse_emails('buildium')
-# CraigslistParser.parse_emails('appfolio')
+CraigslistParser.parse_emails
