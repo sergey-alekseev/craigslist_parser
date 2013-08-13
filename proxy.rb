@@ -2,7 +2,6 @@ require './core_ext/hash/keys'
 require 'httparty'
 require 'aws-sdk'
 require 'logger'
-require 'pry'
 
 class Proxy
   include HTTParty
