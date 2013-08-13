@@ -89,7 +89,7 @@ class CraigslistParser
   end
 
   def self.all_links_from_site(link)
-    listing_links("#{link}/search/apa?").map { |l| l.start_with?('http') ? l : (link + l) }
+    listing_links("#{link}/search/apa?").map { |l| l.start_with?('http') ? l : (link + l) }.uniq
   end
 
   def self.sanitize_info(nfo)
