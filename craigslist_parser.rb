@@ -32,6 +32,7 @@ class CraigslistParser
         sleep(60)
       }
     end
+    sleep 5
     yield
   ensure
     proxy_ip_rotator.kill
