@@ -1,8 +1,8 @@
 require './core_ext/object/blank'
+require './proxy'
 require 'nokogiri'
 require 'open-uri'
 require 'parallel'
-require 'httparty'
 require 'csv'
 
 class CraigslistParser
@@ -11,11 +11,13 @@ class CraigslistParser
   EMAIL_REGEX =  /^(|(([A-Za-z0-9]+_+)|([A-Za-z0-9]+\-+)|([A-Za-z0-9]+\.+)|([A-Za-z0-9]+\++))*[A-Za-z0-9]+@((\w+\-+)|(\w+\.))*\w{1,63}\.[a-zA-Z]{2,6})$/i
   PHONE_REGEX = /^((\([\d]+\).*)|(.*\([\d.]{5,}\))|([\d.\- \(\)\/]+\((fax|office)\))?|([\d.\- \(\)\/]{10,}.*)|([\d\-]{8,}.*)|(Joey Gonzalez Cell \(fax\)))$/
 
+  SEMAPHORE = Mutex.new
+
   def self.get_main_page_html
     headers = { 'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.116 Safari/537.36',
                 'Connection' => 'keep-alive',
                 'Accept-Encoding' => 'gzip' }
-    cg = HTTParty.get('http://www.craigslist.org/about/sites', headers: headers)
+    cg = Proxy.get('http://www.craigslist.org/about/sites', headers: headers)
     Nokogiri.HTML(cg)
   end
 
@@ -23,51 +25,66 @@ class CraigslistParser
     get_main_page_html.css('div.colmask')[0..1].map { |d| d.css('a').map { |a| a['href'] } }.flatten.uniq
   end
 
+  def self.parse
+    proxy_ip_rotator = Thread.new do
+      loop {
+        SEMAPHORE.synchronize { Proxy.rotate_ip }
+        sleep(60)
+      }
+    end
+    yield
+  ensure
+    proxy_ip_rotator.kill
+  end
+
   def self.parse_contact_infos(provider, sanitize = true)
-    c_links = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |s|
-      ret = 5
-      begin
-        puts "links for site #{s} ..."
-        cls = contact_links(s)
-        cls
-      rescue => e
-        puts "exception with site: #{s} : #{e}"
-        if (ret = ret - 1) > 0
-          puts "retrying for site : #{s}"
-          retry
-        else
-          puts e.backtrace
+    parse do
+      c_links = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |s|
+        ret = 5
+        begin
+          puts "links for site #{s} ..."
+          cls = contact_links(s)
+          cls
+        rescue => e
+          puts "exception with site: #{s} : #{e}"
+          if (ret = ret - 1) > 0
+            puts "retrying for site : #{s}"
+            retry
+          else
+            puts e.backtrace
+          end
         end
-      end
-    end.flatten.uniq
-    infos = Parallel.map(c_links, in_threads: 50) do |cl|
-      ret = 5
-      begin
-        puts "info for contact link #{cl} ..."
-        ci = contact_info(cl)
-        ci.map(&:to_s) if ci.present?
-      rescue => e
-        puts "error: #{e} for #{cl}"
-        if (ret = ret - 1) > 0
-          puts "retrying for #{cl}"
-          retry
+      end.flatten.uniq
+      infos = Parallel.map(c_links, in_threads: 50) do |cl|
+        ret = 5
+        begin
+          puts "info for contact link #{cl} ..."
+          ci = contact_info(cl)
+          ci.map(&:to_s) if ci.present?
+        rescue => e
+          puts "error: #{e} for #{cl}"
+          if (ret = ret - 1) > 0
+            puts "retrying for #{cl}"
+            retry
+          end
         end
-      end
-    end.uniq.compact
-    infos = infos.map{|i|sanitize_info(i)}.compact if sanitize
-    write_csv(infos, "craigslist_#{provider}_contact_infos")
+      end.uniq.compact
+      infos = infos.map{|i|sanitize_info(i)}.compact if sanitize
+      write_csv(infos, "craigslist_#{provider}_contact_infos")
+    end
   end
 
   def self.parse_emails
-    emails = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |site_link|
-      begin
-        puts "emails for site #{site_link} ..."
-        emails_on_page(site_link)
-      rescue => e
-        puts e.backtrace
-      end
-    end.flatten.reject(&:blank?).map(&:downcase).uniq.sort
-    write_csv(emails, 'craigslist_emails')
+    parse do
+      emails = Parallel.map(all_us_and_ca_sites_links, in_processes: 4) do |site_link|
+        begin
+          emails_on_page(site_link)
+        rescue => e
+          puts e.backtrace
+        end
+      end.flatten.reject(&:blank?).map(&:downcase).uniq.sort
+      write_csv(emails, 'craigslist_emails')
+    end
   end
 
   def self.write_csv(infos, filename)
@@ -80,8 +97,8 @@ class CraigslistParser
 
   def self.emails_on_page(site_link)
     Parallel.map(all_links_from_site(site_link), threads: 20) do |link|
-      if (g = HTTParty.get(link, no_follow: true) rescue nil)
-        all_emails_on_page = Nokogiri.HTML(g).inner_html.scan(SHORT_EMAIL_REGEX).flatten.uniq if g.present?
+      if (response = Proxy.get(link, no_follow: true) rescue nil)
+        all_emails_on_page = response.scan(SHORT_EMAIL_REGEX).flatten.uniq
         puts all_emails_on_page = all_emails_on_page.reject { |e| e.match(ANONYMIZED_CRAIGLIST_EMAIL_REGEX) }
         all_emails_on_page
       end
@@ -118,11 +135,10 @@ class CraigslistParser
   end
 
   def self.listing_links(link, total = nil, start = 0)
-    site = Nokogiri.HTML(HTTParty.get("#{link}&s=#{start}", timeout: 10, headers: {'Accept-Encoding' => 'gzip'}))
+    site = Nokogiri.HTML(Proxy.get("#{link}&s=#{start}", timeout: 10, headers: {'Accept-Encoding' => 'gzip'}))
     add_pages = site.css('span.pagelinks a').map{|a|a['href']}.uniq
-    puts "#{link}&s=#{start}"
     total ||= site.css('.resulttotal').text.match(/[\d]+/)[0].to_i rescue 0
-    site_pages = [site] + add_pages.map{|p|Nokogiri.HTML(HTTParty.get(p, timeout: 30))}
+    site_pages = [site] + add_pages.map{|p|Nokogiri.HTML(Proxy.get(p, timeout: 30))}
     pages = site_pages.map{|p|p.at_css('#toc_rows').css('p.row a').map{|a|a['href']}}.flatten.reject{|h|h=='#'}
     if total > 100
       pages = pages + listing_links(link, total-100, start+100)

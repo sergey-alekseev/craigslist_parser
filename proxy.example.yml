@@ -1,0 +1,11 @@
+credentials:
+  access_key_id:
+  secret_access_key:
+  region:
+  ec2_region:
+
+instance:
+
+port:
+user:
+password:
