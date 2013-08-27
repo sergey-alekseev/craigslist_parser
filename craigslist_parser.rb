@@ -7,7 +7,7 @@ require 'csv'
 
 class CraigslistParser
   ANONYMIZED_CRAIGLIST_EMAIL_REGEX = /([-a-z0-9.]+@hous\.craigslist\.org)/i
-  SHORT_EMAIL_REGEX = /([-\.\w]+@[-\.\w]+\.[a-z]{2,})/i
+  SHORT_EMAIL_REGEX = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,4}/i
   EMAIL_REGEX =  /^(|(([A-Za-z0-9]+_+)|([A-Za-z0-9]+\-+)|([A-Za-z0-9]+\.+)|([A-Za-z0-9]+\++))*[A-Za-z0-9]+@((\w+\-+)|(\w+\.))*\w{1,63}\.[a-zA-Z]{2,6})$/i
   PHONE_REGEX = /^((\([\d]+\).*)|(.*\([\d.]{5,}\))|([\d.\- \(\)\/]+\((fax|office)\))?|([\d.\- \(\)\/]{10,}.*)|([\d\-]{8,}.*)|(Joey Gonzalez Cell \(fax\)))$/
 
